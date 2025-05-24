@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(cis5650_stream_compaction_test LANGUAGES CUDA CXX)
 
+
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
