@@ -12,6 +12,7 @@ namespace StreamCompaction {
             return timer;
         }
 
+        //naive inclusive scan
         __global__ void naiveScanStep(int n, int d, const int* input, int* output) {
             int k = threadIdx.x + blockIdx.x * blockDim.x;
             if (k >= n) return;
@@ -28,6 +29,7 @@ namespace StreamCompaction {
             return static_cast<int>(std::ceil(std::log2f(static_cast<float>(x))));
         }
 
+        //host func
         void scan(int n, int* odata, const int* idata) {
             timer().startGpuTimer();
 
@@ -43,8 +45,8 @@ namespace StreamCompaction {
             int numBlocks = (n + blockSize - 1) / blockSize;
 
             int depth = ilog2ceil(n);
-            for (int d = 1; d <= depth; ++d) {
-                naiveScanStep << <numBlocks, blockSize >> > (n, d, dev_ping, dev_pong);
+            for (int d = 1; d <= depth; d++) {
+                naiveScanStep<<<numBlocks, blockSize>>>(n, d, dev_ping, dev_pong);
                 cudaDeviceSynchronize();
 
                 // Swap buffers
