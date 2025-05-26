@@ -12,6 +12,7 @@
 #include <stream_compaction/efficient.h>
 #include <stream_compaction/thrust.h>
 #include <stream_compaction/radix.h>
+#include <stream_compaction/sharedmem.h>
 #include "testing_helpers.hpp"
 
 const int SIZE = 1 << 8; // feel free to change the size of array
@@ -294,6 +295,58 @@ int main(int argc, char* argv[]) {
         delete[] output;
         delete[] expected;
     }
+
+
+    printf("\n");
+    printf("***************************************\n");
+    printf("** SHARED MEMORY SCAN TESTS (NAIVE) **\n");
+    printf("***************************************\n");
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory naive scan, power-of-two");
+    StreamCompaction::SharedMem::scanNaive(SIZE, c, a);
+    printCmpResult(SIZE, b, c);
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory naive scan, non-power-of-two");
+    StreamCompaction::SharedMem::scanNaive(NPOT, c, a);
+    printCmpResult(NPOT, b, c);
+
+    {
+        const int N = 32;
+        int input[N], output[N], expected[N];
+        for (int i = 0; i < N; ++i) input[i] = i % 5;
+        StreamCompaction::CPU::scan(N, expected, input);
+        StreamCompaction::SharedMem::scanNaive(N, output, input);
+        printDesc("shared memory naive scan, small manual");
+        printCmpResult(N, expected, output);
+    }
+
+    printf("\n");
+    printf("*********************************************\n");
+    printf("** SHARED MEMORY SCAN TESTS (EFFICIENT)   **\n");
+    printf("*********************************************\n");
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory efficient scan, power-of-two");
+    StreamCompaction::SharedMem::scanEfficient(SIZE, c, a);
+    printCmpResult(SIZE, b, c);
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory efficient scan, non-power-of-two");
+    StreamCompaction::SharedMem::scanEfficient(NPOT, c, a);
+    printCmpResult(NPOT, b, c);
+
+    {
+        const int N = 32;
+        int input[N], output[N], expected[N];
+        for (int i = 0; i < N; ++i) input[i] = (i + 3) % 7;
+        StreamCompaction::CPU::scan(N, expected, input);
+        StreamCompaction::SharedMem::scanEfficient(N, output, input);
+        printDesc("shared memory efficient scan, small manual");
+        printCmpResult(N, expected, output);
+    }
+
 
     system("pause"); // stop Win32 console from closing on exit
     delete[] a;
