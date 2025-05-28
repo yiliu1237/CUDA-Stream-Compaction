@@ -3,6 +3,8 @@
 #include "common.h"
 #include "naive.h"
 
+#include <iostream>
+
 namespace StreamCompaction {
     namespace Naive {
         using StreamCompaction::Common::PerformanceTimer;
@@ -25,13 +27,8 @@ namespace StreamCompaction {
             }
         }
 
-        int ilog2ceil(int x) {
-            return static_cast<int>(std::ceil(std::log2f(static_cast<float>(x))));
-        }
-
         //host func
         void scan(int n, int* odata, const int* idata) {
-            timer().startGpuTimer();
 
             int* dev_ping;
             int* dev_pong;
@@ -41,17 +38,20 @@ namespace StreamCompaction {
 
             cudaMemcpy(dev_ping, idata, n * sizeof(int), cudaMemcpyHostToDevice);
 
-            int blockSize = 128;
+            int blockSize = 1024;
             int numBlocks = (n + blockSize - 1) / blockSize;
 
             int depth = ilog2ceil(n);
+
+            timer().startGpuTimer();
             for (int d = 1; d <= depth; d++) {
                 naiveScanStep<<<numBlocks, blockSize>>>(n, d, dev_ping, dev_pong);
-                cudaDeviceSynchronize();
+                //cudaDeviceSynchronize();
 
                 // Swap buffers
                 std::swap(dev_ping, dev_pong);
             }
+            timer().endGpuTimer();
 
             // dev_ping now has the inclusive scan result
             // Convert to exclusive scan
@@ -61,7 +61,6 @@ namespace StreamCompaction {
             cudaFree(dev_ping);
             cudaFree(dev_pong);
 
-            timer().endGpuTimer();
         }
     }
 }

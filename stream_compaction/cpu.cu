@@ -81,6 +81,7 @@ namespace StreamCompaction {
 
             delete[] bools;
             delete[] indices;
+
             return count;
         }
     }

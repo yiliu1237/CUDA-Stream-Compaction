@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @file      main.cpp
  * @brief     Stream compaction test program
  * @authors   Kai Ninomiya
@@ -12,14 +12,105 @@
 #include <stream_compaction/efficient.h>
 #include <stream_compaction/thrust.h>
 #include <stream_compaction/radix.h>
-#include <stream_compaction/sharedmem.h>
+#include <stream_compaction/sharednaivemem.h>
+#include <stream_compaction/sharedefficientmem.h>
 #include "testing_helpers.hpp"
+
+
+
+#include <iostream>
+#include <fstream>
+#include <iomanip>
+#include <filesystem>  // C++17 required
+#include <direct.h>    // For _getcwd()
 
 const int SIZE = 1 << 8; // feel free to change the size of array
 const int NPOT = SIZE - 3; // Non-Power-Of-Two
 int *a = new int[SIZE];
 int *b = new int[SIZE];
 int *c = new int[SIZE];
+
+
+void ensureFileExists(const std::string& filename) {
+    std::ifstream infile(filename);
+    if (!infile.good()) {
+        std::ofstream outfile(filename);  // Create the file
+        if (outfile) {
+            std::cout << "[INFO] File created: " << filename << std::endl;
+        }
+        else {
+            std::cerr << "[ERROR] Failed to create file: " << filename << std::endl;
+        }
+    }
+    else {
+        std::cout << "[INFO] File already exists: " << filename << std::endl;
+    }
+}
+
+void benchmarkScans() {
+    const std::string filename = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\scan_timing_results.csv";
+    ensureFileExists(filename);
+    
+    std::ofstream fout(filename);
+    fout << "N,CPU(ms),Naive(ms),Efficient(ms),Thrust(ms)" << std::endl;
+
+    char cwd[1024];
+    _getcwd(cwd, sizeof(cwd));  // current working directory
+    std::string fullPath = std::string(cwd) + "\\" + filename;
+    std::cout << "[DEBUG] Attempting to write to: " << fullPath << std::endl;
+
+    if (!fout.is_open()) {
+        std::cerr << "[ERROR] Failed to open scan_timing_results.csv for writing." << std::endl;
+        return;
+    }
+
+    for (int exp = 15; exp <= 25; exp++) {  // Increase range for more realistic timings
+        int N = 1 << exp;
+
+        int* input = new int[N];
+        int* output = new int[N];
+
+        genArray(N, input, 10000);  // Fill with random integers
+
+        // CPU scan
+        zeroArray(N, output);
+        StreamCompaction::CPU::scan(N, output, input);
+        cudaDeviceSynchronize();
+        float cpuTime = StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation();
+
+        // Naive scan
+        zeroArray(N, output);
+        StreamCompaction::Naive::scan(N, output, input);
+        cudaDeviceSynchronize();
+        float naiveTime = StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation();
+
+        // Efficient scan
+        zeroArray(N, output);
+        StreamCompaction::Efficient::scan(N, output, input);
+        cudaDeviceSynchronize();
+        float efficientTime = StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation();
+
+
+        // Thrust scan. ERROR
+        //zeroArray(N, output);
+        //StreamCompaction::Thrust::scan(N, output, input);
+        //cudaDeviceSynchronize();
+        //float thrustTime = StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation();
+
+        std::cout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << std::endl;
+
+
+        fout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << std::endl;
+
+        delete[] input;
+        delete[] output;
+    }
+
+    fout.close();
+    printf("Scan timing results written to scan_timing_results.csv\n");
+}
+
+
 
 int main(int argc, char* argv[]) {
     // Scan tests
@@ -97,6 +188,50 @@ int main(int argc, char* argv[]) {
     //printArray(NPOT, c, true);
     printCmpResult(NPOT, b, c);
 
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory naive scan, power-of-two");
+    StreamCompaction::SharedNaiveMem::scanSharedNaive(SIZE, c, a);
+    printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    printCmpResult(SIZE, b, c);
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory naive scan, non-power-of-two");
+    StreamCompaction::SharedNaiveMem::scanSharedNaive(NPOT, c, a);
+    printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    printCmpResult(NPOT, b, c);
+
+    {
+        const int N = 32;
+        int input[N], output[N], expected[N];
+        for (int i = 0; i < N; ++i) input[i] = i % 5;
+        printDesc("shared memory naive scan, small manual");
+        StreamCompaction::CPU::scan(N, expected, input);
+        StreamCompaction::SharedNaiveMem::scanSharedNaive(N, output, input);
+        printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+        printArray(N, output, true);
+        printCmpResult(N, expected, output);
+    }
+
+
+    zeroArray(SIZE, c);
+    printDesc("shared memory efficient scan, power-of-two");
+    StreamCompaction::SharedEfficientMem::scanSharedEfficient(SIZE, c, a);
+    printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    printCmpResult(SIZE, b, c);
+
+
+    {
+        const int N = 32;
+        int input[N], output[N], expected[N];
+        for (int i = 0; i < N; ++i) input[i] = i % 4;
+        StreamCompaction::CPU::scan(N, expected, input);
+        StreamCompaction::SharedEfficientMem::scanSharedEfficient(N, output, input);
+        printDesc("shared memory efficient scan, small manual");
+        printCmpResult(N, expected, output);
+    }
+
+
     printf("\n");
     printf("*****************************\n");
     printf("** STREAM COMPACTION TESTS **\n");
@@ -139,15 +274,59 @@ int main(int argc, char* argv[]) {
     printDesc("work-efficient compact, power-of-two");
     count = StreamCompaction::Efficient::compact(SIZE, c, a);
     printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
+    printArray(count, c, true);
     printCmpLenResult(count, expectedCount, b, c);
 
     zeroArray(SIZE, c);
     printDesc("work-efficient compact, non-power-of-two");
     count = StreamCompaction::Efficient::compact(NPOT, c, a);
     printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
+    printArray(count, c, true);
     printCmpLenResult(count, expectedNPOT, b, c);
+
+
+    ////// ERROR STARTS
+    // 
+    //zeroArray(SIZE, c);
+    //printDesc("shared mem naive compact, power-of-two");
+    //count = StreamCompaction::SharedNaiveMem::compactNaive(SIZE, c, a);
+    //printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    //printArray(count, c, true);
+    //printCmpLenResult(count, expectedCount, b, c);
+
+    //zeroArray(SIZE, c);
+    //printDesc("shared mem naive compact, non-power-of-two");
+    //count = StreamCompaction::SharedNaiveMem::compactNaive(NPOT, c, a);
+    //printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    //printArray(count, c, true);
+    //printCmpLenResult(count, expectedNPOT, b, c);
+
+
+    //zeroArray(SIZE, c);
+    //printDesc("shared mem efficient compact, power-of-two");
+    //count = StreamCompaction::SharedEfficientMem::compactEfficient(SIZE, c, a);
+    //printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    //printArray(count, c, true);
+    //printCmpLenResult(count, expectedCount, b, c);
+
+    //zeroArray(SIZE, c);
+    //printDesc("shared mem efficient compact, non-power-of-two");
+    //count = StreamCompaction::SharedEfficientMem::compactEfficient(NPOT, c, a);
+    //printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    //printArray(count, c, true);
+    //printCmpLenResult(count, expectedNPOT, b, c);
+
+    //{
+    //    const int N = 32;
+    //    int input[N], output[N], expected[N];
+    //    for (int i = 0; i < N; ++i) input[i] = (i + 3) % 7;
+    //    StreamCompaction::CPU::compactWithScan(N, expected, input);
+    //    StreamCompaction::SharedEfficientMem::compactEfficient(N, output, input);
+    //    printDesc("shared memory efficient scan, small manual");
+    //    printCmpResult(N, expected, output);
+    //}
+
+    ////// ERROR ENDS
 
 
 
@@ -296,56 +475,7 @@ int main(int argc, char* argv[]) {
         delete[] expected;
     }
 
-
-    printf("\n");
-    printf("***************************************\n");
-    printf("** SHARED MEMORY SCAN TESTS (NAIVE) **\n");
-    printf("***************************************\n");
-
-    zeroArray(SIZE, c);
-    printDesc("shared memory naive scan, power-of-two");
-    StreamCompaction::SharedMem::scanNaive(SIZE, c, a);
-    printCmpResult(SIZE, b, c);
-
-    zeroArray(SIZE, c);
-    printDesc("shared memory naive scan, non-power-of-two");
-    StreamCompaction::SharedMem::scanNaive(NPOT, c, a);
-    printCmpResult(NPOT, b, c);
-
-    {
-        const int N = 32;
-        int input[N], output[N], expected[N];
-        for (int i = 0; i < N; ++i) input[i] = i % 5;
-        StreamCompaction::CPU::scan(N, expected, input);
-        StreamCompaction::SharedMem::scanNaive(N, output, input);
-        printDesc("shared memory naive scan, small manual");
-        printCmpResult(N, expected, output);
-    }
-
-    printf("\n");
-    printf("*********************************************\n");
-    printf("** SHARED MEMORY SCAN TESTS (EFFICIENT)   **\n");
-    printf("*********************************************\n");
-
-    zeroArray(SIZE, c);
-    printDesc("shared memory efficient scan, power-of-two");
-    StreamCompaction::SharedMem::scanEfficient(SIZE, c, a);
-    printCmpResult(SIZE, b, c);
-
-    zeroArray(SIZE, c);
-    printDesc("shared memory efficient scan, non-power-of-two");
-    StreamCompaction::SharedMem::scanEfficient(NPOT, c, a);
-    printCmpResult(NPOT, b, c);
-
-    {
-        const int N = 32;
-        int input[N], output[N], expected[N];
-        for (int i = 0; i < N; ++i) input[i] = (i + 3) % 7;
-        StreamCompaction::CPU::scan(N, expected, input);
-        StreamCompaction::SharedMem::scanEfficient(N, output, input);
-        printDesc("shared memory efficient scan, small manual");
-        printCmpResult(N, expected, output);
-    }
+    benchmarkScans();
 
 
     system("pause"); // stop Win32 console from closing on exit

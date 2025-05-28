@@ -36,7 +36,7 @@ namespace StreamCompaction {
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
 
-        // Internal version that controls timing
+         // Internal version that controls timing
         void scan_internal(int n, int* odata, const int* idata, bool timing) {
             if (timing) timer().startGpuTimer();
 
