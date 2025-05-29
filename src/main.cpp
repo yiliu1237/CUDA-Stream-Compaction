@@ -16,19 +16,17 @@
 #include <stream_compaction/sharedefficientmem.h>
 #include "testing_helpers.hpp"
 
-
-
 #include <iostream>
 #include <fstream>
 #include <iomanip>
 #include <filesystem>  // C++17 required
 #include <direct.h>    // For _getcwd()
 
-const int SIZE = 1 << 8; // feel free to change the size of array
+const int SIZE = 1 << 24; // feel free to change the size of array
 const int NPOT = SIZE - 3; // Non-Power-Of-Two
-int *a = new int[SIZE];
-int *b = new int[SIZE];
-int *c = new int[SIZE];
+int* a = new int[SIZE];
+int* b = new int[SIZE];
+int* c = new int[SIZE];
 
 
 void ensureFileExists(const std::string& filename) {
@@ -50,7 +48,7 @@ void ensureFileExists(const std::string& filename) {
 void benchmarkScans() {
     const std::string filename = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\scan_timing_results.csv";
     ensureFileExists(filename);
-    
+
     std::ofstream fout(filename);
     fout << "N,CPU(ms),Naive(ms),Efficient(ms),Thrust(ms)" << std::endl;
 
@@ -64,7 +62,7 @@ void benchmarkScans() {
         return;
     }
 
-    for (int exp = 15; exp <= 25; exp++) {  // Increase range for more realistic timings
+    for (int exp = 35; exp <= 45; exp++) {  // Increase range for more realistic timings
         int N = 1 << exp;
 
         int* input = new int[N];
@@ -92,15 +90,14 @@ void benchmarkScans() {
 
 
         // Thrust scan. ERROR
-        //zeroArray(N, output);
-        //StreamCompaction::Thrust::scan(N, output, input);
-        //cudaDeviceSynchronize();
-        //float thrustTime = StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation();
+        zeroArray(N, output);
+        StreamCompaction::Thrust::scan(N, output, input);
+        cudaDeviceSynchronize();
+        float thrustTime = StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation();
 
-        std::cout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << std::endl;
+        std::cout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << thrustTime  << std::endl;
 
-
-        fout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << std::endl;
+        fout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << thrustTime  << std::endl;
 
         delete[] input;
         delete[] output;
@@ -188,18 +185,49 @@ int main(int argc, char* argv[]) {
     //printArray(NPOT, c, true);
     printCmpResult(NPOT, b, c);
 
+    const int SAFE_SIZE = 512;     // Power-of-two and ≤ 1024
+    const int SAFE_NPOT = 500;     // Non-power-of-two and ≤ 1024
 
-    zeroArray(SIZE, c);
-    printDesc("shared memory naive scan, power-of-two");
-    StreamCompaction::SharedNaiveMem::scanSharedNaive(SIZE, c, a);
-    printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    printCmpResult(SIZE, b, c);
+    // ======= shared memory naive scan, power-of-two =======
+    {
+        int* a = new int[SAFE_SIZE];
+        int* b = new int[SAFE_SIZE];
+        int* c = new int[SAFE_SIZE];
 
-    zeroArray(SIZE, c);
-    printDesc("shared memory naive scan, non-power-of-two");
-    StreamCompaction::SharedNaiveMem::scanSharedNaive(NPOT, c, a);
-    printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    printCmpResult(NPOT, b, c);
+        genArray(SAFE_SIZE, a, 50);    
+        StreamCompaction::CPU::scan(SAFE_SIZE, b, a); 
+
+        zeroArray(SAFE_SIZE, c);
+        printDesc("shared memory naive scan, power-of-two");
+        StreamCompaction::SharedNaiveMem::scanSharedNaive(SAFE_SIZE, c, a);
+        printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+        printCmpResult(SAFE_SIZE, b, c);
+
+        delete[] a;
+        delete[] b;
+        delete[] c;
+    }
+
+    // ======= shared memory naive scan, non-power-of-two =======
+    {
+        int* a = new int[SAFE_NPOT];
+        int* b = new int[SAFE_NPOT];
+        int* c = new int[SAFE_NPOT];
+
+        genArray(SAFE_NPOT, a, 50);
+        StreamCompaction::CPU::scan(SAFE_NPOT, b, a);
+
+        zeroArray(SAFE_NPOT, c);
+        printDesc("shared memory naive scan, non-power-of-two");
+        StreamCompaction::SharedNaiveMem::scanSharedNaive(SAFE_NPOT, c, a);
+        printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+        printCmpResult(SAFE_NPOT, b, c);
+
+        delete[] a;
+        delete[] b;
+        delete[] c;
+    }
+
 
     {
         const int N = 32;
@@ -213,12 +241,24 @@ int main(int argc, char* argv[]) {
         printCmpResult(N, expected, output);
     }
 
+    {
+        int* a = new int[SAFE_SIZE];
+        int* b = new int[SAFE_SIZE];
+        int* c = new int[SAFE_SIZE];
 
-    zeroArray(SIZE, c);
-    printDesc("shared memory efficient scan, power-of-two");
-    StreamCompaction::SharedEfficientMem::scanSharedEfficient(SIZE, c, a);
-    printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    printCmpResult(SIZE, b, c);
+        genArray(SAFE_SIZE, a, 50);
+        StreamCompaction::CPU::scan(SAFE_SIZE, b, a);
+
+        zeroArray(SAFE_SIZE, c);
+        printDesc("shared memory efficient scan, power-of-two");
+        StreamCompaction::SharedEfficientMem::scanSharedEfficient(SAFE_SIZE, c, a);
+        printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+        printCmpResult(SAFE_SIZE, b, c);
+
+        delete[] a;
+        delete[] b;
+        delete[] c;
+    }
 
 
     {
@@ -283,51 +323,6 @@ int main(int argc, char* argv[]) {
     printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
     printArray(count, c, true);
     printCmpLenResult(count, expectedNPOT, b, c);
-
-
-    ////// ERROR STARTS
-    // 
-    //zeroArray(SIZE, c);
-    //printDesc("shared mem naive compact, power-of-two");
-    //count = StreamCompaction::SharedNaiveMem::compactNaive(SIZE, c, a);
-    //printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
-    //printCmpLenResult(count, expectedCount, b, c);
-
-    //zeroArray(SIZE, c);
-    //printDesc("shared mem naive compact, non-power-of-two");
-    //count = StreamCompaction::SharedNaiveMem::compactNaive(NPOT, c, a);
-    //printElapsedTime(StreamCompaction::SharedNaiveMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
-    //printCmpLenResult(count, expectedNPOT, b, c);
-
-
-    //zeroArray(SIZE, c);
-    //printDesc("shared mem efficient compact, power-of-two");
-    //count = StreamCompaction::SharedEfficientMem::compactEfficient(SIZE, c, a);
-    //printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
-    //printCmpLenResult(count, expectedCount, b, c);
-
-    //zeroArray(SIZE, c);
-    //printDesc("shared mem efficient compact, non-power-of-two");
-    //count = StreamCompaction::SharedEfficientMem::compactEfficient(NPOT, c, a);
-    //printElapsedTime(StreamCompaction::SharedEfficientMem::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
-    //printArray(count, c, true);
-    //printCmpLenResult(count, expectedNPOT, b, c);
-
-    //{
-    //    const int N = 32;
-    //    int input[N], output[N], expected[N];
-    //    for (int i = 0; i < N; ++i) input[i] = (i + 3) % 7;
-    //    StreamCompaction::CPU::compactWithScan(N, expected, input);
-    //    StreamCompaction::SharedEfficientMem::compactEfficient(N, output, input);
-    //    printDesc("shared memory efficient scan, small manual");
-    //    printCmpResult(N, expected, output);
-    //}
-
-    ////// ERROR ENDS
-
 
 
     printf("\n");

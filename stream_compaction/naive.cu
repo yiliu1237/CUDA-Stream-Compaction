@@ -27,7 +27,6 @@ namespace StreamCompaction {
             }
         }
 
-        //host func
         void scan(int n, int* odata, const int* idata) {
 
             int* dev_ping;
@@ -45,7 +44,7 @@ namespace StreamCompaction {
 
             timer().startGpuTimer();
             for (int d = 1; d <= depth; d++) {
-                naiveScanStep<<<numBlocks, blockSize>>>(n, d, dev_ping, dev_pong);
+                naiveScanStep << <numBlocks, blockSize >> > (n, d, dev_ping, dev_pong);
                 //cudaDeviceSynchronize();
 
                 // Swap buffers

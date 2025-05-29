@@ -21,7 +21,7 @@ efficient = df['Efficient(ms)']
 
 # === Plot ===
 plt.figure(figsize=(10, 6))
-#plt.plot(x, cpu, 'o-', label='CPU')
+plt.plot(x, cpu, 'o-', label='CPU')
 plt.plot(x, naive, 'o-', label='Naive GPU')
 plt.plot(x, efficient, 'o-', label='Efficient GPU')
 # plt.plot(x, thrust, 'o-', label='Thrust GPU')
