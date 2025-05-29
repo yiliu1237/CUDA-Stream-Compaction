@@ -22,7 +22,6 @@ The primary goals of this project were:
 - Implement different versions of stream compaction on the GPU.
 - Compare them against a CPU baseline.
 - Investigate performance characteristics and bottlenecks.
-- Explore scan implementations as subroutines.
 
 ---
 
@@ -55,10 +54,14 @@ The primary goals of this project were:
 #### • Thrust Library Scan
 - Calls `thrust::exclusive_scan()` as a baseline for optimized GPU performance.
 
-### 4. **Benchmarking & Performance Comparison**
-- All implementations were benchmarked for varying input sizes.
-- GPU timings use CUDA events; CPU uses standard timers.
-- Results written to CSV files for analysis.
+### 4. **GPU Radix Sort**
+- Implements a multi-pass Least Significant Bit (LSB) radix sort for 32-bit integers.
+- Each pass processes a single bit of all elements, classifying values based on 0 or 1 at that bit.
+- Performs bit extraction, scan on inverted bits, and scatter to sort data based on the current bit.
+- Uses the previously implemented work-efficient scan as a prefix sum primitive.
+- Buffers are swapped each round to maintain sorted data across 32 passes.
+- Suitable for sorting integer keys; stable and parallel-friendly.
+
 
 ---
 
@@ -114,44 +117,44 @@ Below are the results from running the full test suite, including scan, stream c
 ****************
 ** SCAN TESTS **
 ****************
-    [   9  48  21  27  35  11   8   3  34   0   0   0  38 ...   2   0 ]
+    [  13  15  38  42  24   6  45   5  44  36  49  23  31 ...   8   0 ]
 ==== cpu scan, power-of-two ====
-   elapsed time: 23.1201ms    (std::chrono Measured)
-    [   0   9  57  78 105 140 151 159 162 196 196 196 196 ... 410887318 410887320 ]
+   elapsed time: 175.799ms    (std::chrono Measured)
+    [   0  13  28  66 108 132 138 183 188 232 268 317 340 ... -1007801046 -1007801038 ]
 ==== cpu scan, non-power-of-two ====
-   elapsed time: 23.2731ms    (std::chrono Measured)
-    [   0   9  57  78 105 140 151 159 162 196 196 196 196 ... 410887242 410887288 ]
+   elapsed time: 176.075ms    (std::chrono Measured)
+    [   0  13  28  66 108 132 138 183 188 232 268 317 340 ... -1007801093 -1007801087 ]
     passed
 ==== naive scan, power-of-two ====
-   elapsed time: 5.2679ms    (CUDA Measured)
+   elapsed time: 34.0388ms    (CUDA Measured)
     passed
 ==== naive scan, non-power-of-two ====
-   elapsed time: 4.88928ms    (CUDA Measured)
+   elapsed time: 33.9692ms    (CUDA Measured)
     passed
 ==== work-efficient scan, power-of-two ====
-   elapsed time: 15.4344ms    (CUDA Measured)
+   elapsed time: 13.3369ms    (CUDA Measured)
     passed
 ==== work-efficient scan, non-power-of-two ====
-   elapsed time: 15.4737ms    (CUDA Measured)
+   elapsed time: 12.9604ms    (CUDA Measured)
     passed
 ==== thrust scan, power-of-two ====
-   elapsed time: 53.3576ms    (CUDA Measured)
+   elapsed time: 1.2496ms    (CUDA Measured)
     passed
 ==== thrust scan, non-power-of-two ====
-   elapsed time: 24.6813ms    (CUDA Measured)
+   elapsed time: 1.21722ms    (CUDA Measured)
     passed
 ==== shared memory naive scan, power-of-two ====
-   elapsed time: 0.334848ms    (CUDA Measured)
+   elapsed time: 0.005248ms    (CUDA Measured)
     passed
 ==== shared memory naive scan, non-power-of-two ====
-   elapsed time: 0.013312ms    (CUDA Measured)
+   elapsed time: 0.00512ms    (CUDA Measured)
     passed
 ==== shared memory naive scan, small manual ====
-   elapsed time: 0ms    (CUDA Measured)
+   elapsed time: 0.004096ms    (CUDA Measured)
     [   0   0   1   3   6  10  10  11  13  16  20  20  21 ...  60  60 ]
     passed
 ==== shared memory efficient scan, power-of-two ====
-   elapsed time: 0.361472ms    (CUDA Measured)
+   elapsed time: 0.00512ms    (CUDA Measured)
     passed
 ==== shared memory efficient scan, small manual ====
     passed
@@ -159,26 +162,26 @@ Below are the results from running the full test suite, including scan, stream c
 *****************************
 ** STREAM COMPACTION TESTS **
 *****************************
-    [   3   0   3   3   1   3   0   1   0   0   0   2   2 ...   2   0 ]
+    [   2   1   2   2   2   0   2   3   1   0   3   3   0 ...   0   0 ]
 ==== cpu compact without scan, power-of-two ====
-   elapsed time: 42.3429ms    (std::chrono Measured)
-    [   3   3   3   1   3   1   2   2   3   3   1   3   2 ...   2   2 ]
+   elapsed time: 239.519ms    (std::chrono Measured)
+    [   2   1   2   2   2   2   3   1   3   3   1   3   1 ...   3   2 ]
     passed
 ==== cpu compact without scan, non-power-of-two ====
-   elapsed time: 43.0611ms    (std::chrono Measured)
-    [   3   3   3   1   3   1   2   2   3   3   1   3   2 ...   1   2 ]
+   elapsed time: 238.586ms    (std::chrono Measured)
+    [   2   1   2   2   2   2   3   1   3   3   1   3   1 ...   2   3 ]
     passed
 ==== cpu compact with scan ====
-   elapsed time: 23.6391ms    (std::chrono Measured)
-    [   3   3   3   1   3   1   2   2   3   3   1   3   2 ...   2   2 ]
+   elapsed time: 217.626ms    (std::chrono Measured)
+    [   2   1   2   2   2   2   3   1   3   3   1   3   1 ...   3   2 ]
     passed
 ==== work-efficient compact, power-of-two ====
-   elapsed time: 4.49686ms    (CUDA Measured)
-    [   3   3   3   1   3   1   2   2   3   3   1   3   2 ...   2   2 ]
+   elapsed time: 33.9799ms    (CUDA Measured)
+    [   2   1   2   2   2   2   3   1   3   3   1   3   1 ...   3   2 ]
     passed
 ==== work-efficient compact, non-power-of-two ====
-   elapsed time: 4.20435ms    (CUDA Measured)
-    [   3   3   3   1   3   1   2   2   3   3   1   3   2 ...   1   2 ]
+   elapsed time: 33.5489ms    (CUDA Measured)
+    [   2   1   2   2   2   2   3   1   3   3   1   3   1 ...   2   3 ]
     passed
 
 ***********************
@@ -200,13 +203,13 @@ Below are the results from running the full test suite, including scan, stream c
     [   0   1   1   2   3   3   5   7   9 ]
     passed
 ==== radix sort - large array (pow2) ====
-   elapsed time: 0.43328ms    (CUDA Measured)
+   elapsed time: 0.174848ms    (CUDA Measured)
     passed
 ==== radix sort - large array (non-pow2) ====
-   elapsed time: 0.444416ms    (CUDA Measured)
+   elapsed time: 0.200704ms    (CUDA Measured)
     passed
 ==== radix sort - nearly sorted with random swaps ====
-   elapsed time: 0.873472ms    (CUDA Measured)
+   elapsed time: 0.233664ms    (CUDA Measured)
     passed
 ```
 </details> 
