@@ -60,6 +60,7 @@ The primary goals of this project were:
 - GPU timings use CUDA events; CPU uses standard timers.
 - Results written to CSV files for analysis.
 
+---
 
 ## Test Cases Summary
 
@@ -77,7 +78,6 @@ Tested scan variants include CPU, naive GPU, work-efficient GPU, Thrust, and sha
 | Shared memory naive scan                       | 512, 500, 32       | Small sizes for validating shared mem behavior      |
 | Shared memory efficient scan                   | 512, 32            | Efficient scan in shared memory with loop unrolling |
 
----
 
 ### Stream Compaction Tests
 Tested both CPU and GPU compaction with and without scan, for both power-of-two and non-power-of-two sizes.
@@ -87,8 +87,6 @@ Tested both CPU and GPU compaction with and without scan, for both power-of-two 
 | CPU compaction without scan (POT / NPOT)       | 524,288 / 393,931  | Sequential traversal                                 |
 | CPU compaction with scan                       | 524,288            | Uses scan + scatter                                  |
 | Work-efficient GPU compaction (POT / NPOT)     | 524,288 / 393,931  | Uses map-to-boolean + scan + scatter                |
-
----
 
 ### Radix Sort Tests
 Includes correctness tests for various distributions and sizes, with special cases and large arrays.
@@ -104,7 +102,7 @@ Includes correctness tests for various distributions and sizes, with special cas
 | Large array (non-power-of-two)                 | 65,519             | Non-POT performance and correctness                 |
 | Nearly sorted array with random swaps          | 16,384             | Realistic scenario with small local disorder        |
 
-
+---
 
 ## Test Output Summary
 Below are the results from running the full test suite, including scan, stream compaction, and radix sort performance and correctness checks.
@@ -213,32 +211,34 @@ Below are the results from running the full test suite, including scan, stream c
 ```
 </details> 
 
+---
 
 ## Scan Runtime Analysis
 
 The figure below shows the elapsed time (in milliseconds) of four scan implementations measured across input sizes ranging from \(2^{13}\) to \(2^{27}\), using a fixed block size of 256. All tests were run in **Release mode** to ensure optimized performance, particularly for the Thrust-based implementation.
 
-![Scan Elapsed Time Plot](visualization/scan_size_plot_13_27.png.png)
+![Scan Elapsed Time Plot](visualization/scan_size_plot_13_27.png)
 
 ### Key Observations
 
-#### Performance at Small Sizes (\(2^{13} \to 2^{17}\))
+#### Performance at Small Sizes (\(2^{13} → 2^{17}\))
 - **Thrust Scan** performs exceptionally well, benefiting from Release-mode optimizations that eliminate overhead seen in debug builds.
 - **Efficient GPU Scan** is also strong in this range, clearly outperforming the naive version.
 - **CPU Scan** starts very fast but scales poorly beyond this point.
 
-#### Mid-Range Sizes (\(2^{18} \to 2^{24}\))
+#### Mid-Range Sizes (\(2^{18} → 2^{24}\))
 - **Thrust Scan** continues to lead, maintaining low latency while other methods begin to scale more steeply.
 - **Naive GPU Scan** begins to show inefficiencies due to redundant memory access and higher algorithmic complexity.
 - **Efficient GPU Scan** remains competitive but starts to lag behind Thrust.
 
-#### Large Sizes (\(2^{25} \to 2^{27}\))
+#### Large Sizes (\(2^{25} → 2^{27}\))
 - **Thrust Scan** remains the fastest and scales efficiently, highlighting its well-optimized internal operations.
 - **Naive GPU Scan** slows down significantly due to its \(O(n \log n)\) complexity and less efficient memory use.
 - **CPU Scan** becomes the slowest by far, with consistent linear growth.
 
 Overall, Thrust offers the best performance across all input sizes when compiled in Release mode, while the Efficient GPU Scan provides a solid custom alternative with strong performance at small to mid-range sizes. The CPU scan, although fast for small inputs, follows a linear \(O(n)\) time complexity and becomes the slowest as input sizes grow.
 
+---
 
 ## Compact Runtime Analysis
 
@@ -249,7 +249,7 @@ The plot below shows the runtime performance (in milliseconds) of three differen
 ### Key Observations
 
 #### CPU vs CPU with Scan
-- For small input sizes (\(N \leq 2^{16}\)), both CPU variants show very similar runtimes, indicating that the scan step contributes little overhead in this range.
+- For small input sizes (\(N ≤ 2^{16}\)), both CPU variants show very similar runtimes, indicating that the scan step contributes little overhead in this range.
 - As \(N\) increases, "CPU with Scan" becomes slightly slower than CPU-only compaction due to the added cost of prefix sum computation.
 - Both exhibit consistent linear growth on the log-log plot, confirming the expected **\(O(n)\)** time complexity for serial execution.
 
@@ -260,6 +260,7 @@ The plot below shows the runtime performance (in milliseconds) of three differen
   - Increased number of kernel launches
 - Even at \(N = 2^{27}\), GPU runtime remains well under 50 ms — significantly outperforming the CPU implementations, which exceed 100 ms at that scale.
 
+---
 
 ## Efficient GPU Scan Runtime Analysis (Global Memory Implementation)
 
