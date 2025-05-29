@@ -22,11 +22,6 @@
 #include <filesystem>  // C++17 required
 #include <direct.h>    // For _getcwd()
 
-const int SIZE = 1 << 24; // feel free to change the size of array
-const int NPOT = SIZE - 3; // Non-Power-Of-Two
-int* a = new int[SIZE];
-int* b = new int[SIZE];
-int* c = new int[SIZE];
 
 
 void ensureFileExists(const std::string& filename) {
@@ -45,71 +40,24 @@ void ensureFileExists(const std::string& filename) {
     }
 }
 
-void benchmarkScans() {
-    const std::string filename = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\scan_timing_results.csv";
-    ensureFileExists(filename);
 
-    std::ofstream fout(filename);
-    fout << "N,CPU(ms),Naive(ms),Efficient(ms),Thrust(ms)" << std::endl;
 
-    char cwd[1024];
-    _getcwd(cwd, sizeof(cwd));  // current working directory
-    std::string fullPath = std::string(cwd) + "\\" + filename;
-    std::cout << "[DEBUG] Attempting to write to: " << fullPath << std::endl;
-
+void logTestCaseRuntimeToCSV(const std::string& filename, int size, float cpu, float naive, float efficient, float thrust) {
+    std::ofstream fout(filename, std::ios::app); // append mode
     if (!fout.is_open()) {
-        std::cerr << "[ERROR] Failed to open scan_timing_results.csv for writing." << std::endl;
+        std::cerr << "[ERROR] Could not open " << filename << " for logging scan test results." << std::endl;
         return;
     }
 
-    for (int exp = 35; exp <= 45; exp++) {  // Increase range for more realistic timings
-        int N = 1 << exp;
-
-        int* input = new int[N];
-        int* output = new int[N];
-
-        genArray(N, input, 10000);  // Fill with random integers
-
-        // CPU scan
-        zeroArray(N, output);
-        StreamCompaction::CPU::scan(N, output, input);
-        cudaDeviceSynchronize();
-        float cpuTime = StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation();
-
-        // Naive scan
-        zeroArray(N, output);
-        StreamCompaction::Naive::scan(N, output, input);
-        cudaDeviceSynchronize();
-        float naiveTime = StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation();
-
-        // Efficient scan
-        zeroArray(N, output);
-        StreamCompaction::Efficient::scan(N, output, input);
-        cudaDeviceSynchronize();
-        float efficientTime = StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation();
-
-
-        // Thrust scan. ERROR
-        zeroArray(N, output);
-        StreamCompaction::Thrust::scan(N, output, input);
-        cudaDeviceSynchronize();
-        float thrustTime = StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation();
-
-        std::cout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << thrustTime  << std::endl;
-
-        fout << N << "," << cpuTime << "," << naiveTime << "," << efficientTime << "," << thrustTime  << std::endl;
-
-        delete[] input;
-        delete[] output;
-    }
-
+    fout << size << "," << cpu << "," << naive << "," << efficient << "," << thrust << std::endl;
     fout.close();
-    printf("Scan timing results written to scan_timing_results.csv\n");
 }
 
 
+void runTests(int* a, int* b, int* c, int SIZE) {
 
-int main(int argc, char* argv[]) {
+    int NPOT = SIZE - 3;
+
     // Scan tests
 
     printf("\n");
@@ -127,7 +75,8 @@ int main(int argc, char* argv[]) {
     zeroArray(SIZE, b);
     printDesc("cpu scan, power-of-two");
     StreamCompaction::CPU::scan(SIZE, b, a);
-    printElapsedTime(StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation(), "(std::chrono Measured)");
+    float cpu_scan = StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation();
+    printElapsedTime(cpu_scan, "(std::chrono Measured)");
     printArray(SIZE, b, true);
 
     zeroArray(SIZE, c);
@@ -140,15 +89,10 @@ int main(int argc, char* argv[]) {
     zeroArray(SIZE, c);
     printDesc("naive scan, power-of-two");
     StreamCompaction::Naive::scan(SIZE, c, a);
-    printElapsedTime(StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    float naive_scan = StreamCompaction::Naive::timer().getGpuElapsedTimeForPreviousOperation();
+    printElapsedTime(naive_scan, "(CUDA Measured)");
     //printArray(SIZE, c, true);
     printCmpResult(SIZE, b, c);
-
-    /* For bug-finding only: Array of 1s to help find bugs in stream compaction or scan
-    onesArray(SIZE, c);
-    printDesc("1s array for finding bugs");
-    StreamCompaction::Naive::scan(SIZE, c, a);
-    printArray(SIZE, c, true); */
 
     zeroArray(SIZE, c);
     printDesc("naive scan, non-power-of-two");
@@ -160,7 +104,8 @@ int main(int argc, char* argv[]) {
     zeroArray(SIZE, c);
     printDesc("work-efficient scan, power-of-two");
     StreamCompaction::Efficient::scan(SIZE, c, a);
-    printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    float eff_scan = StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation();
+    printElapsedTime(eff_scan, "(CUDA Measured)");
     //printArray(SIZE, c, true);
     printCmpResult(SIZE, b, c);
 
@@ -174,9 +119,14 @@ int main(int argc, char* argv[]) {
     zeroArray(SIZE, c);
     printDesc("thrust scan, power-of-two");
     StreamCompaction::Thrust::scan(SIZE, c, a);
-    printElapsedTime(StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    float thrust_scan = StreamCompaction::Thrust::timer().getGpuElapsedTimeForPreviousOperation();
+    printElapsedTime(thrust_scan, "(CUDA Measured)");
     //printArray(SIZE, c, true);
     printCmpResult(SIZE, b, c);
+
+    const std::string scanLogFile = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\scan_size_results.csv";
+    logTestCaseRuntimeToCSV(scanLogFile, SIZE, cpu_scan, naive_scan, eff_scan, thrust_scan);
+
 
     zeroArray(SIZE, c);
     printDesc("thrust scan, non-power-of-two");
@@ -194,8 +144,8 @@ int main(int argc, char* argv[]) {
         int* b = new int[SAFE_SIZE];
         int* c = new int[SAFE_SIZE];
 
-        genArray(SAFE_SIZE, a, 50);    
-        StreamCompaction::CPU::scan(SAFE_SIZE, b, a); 
+        genArray(SAFE_SIZE, a, 50);
+        StreamCompaction::CPU::scan(SAFE_SIZE, b, a);
 
         zeroArray(SAFE_SIZE, c);
         printDesc("shared memory naive scan, power-of-two");
@@ -290,7 +240,8 @@ int main(int argc, char* argv[]) {
     zeroArray(SIZE, b);
     printDesc("cpu compact without scan, power-of-two");
     count = StreamCompaction::CPU::compactWithoutScan(SIZE, b, a);
-    printElapsedTime(StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation(), "(std::chrono Measured)");
+    float cpu_compact = StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation();
+    printElapsedTime(cpu_compact, "(std::chrono Measured)");
     expectedCount = count;
     printArray(count, b, true);
     printCmpLenResult(count, expectedCount, b, b);
@@ -306,14 +257,17 @@ int main(int argc, char* argv[]) {
     zeroArray(SIZE, c);
     printDesc("cpu compact with scan");
     count = StreamCompaction::CPU::compactWithScan(SIZE, c, a);
-    printElapsedTime(StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation(), "(std::chrono Measured)");
+    float cpu_compact_wScan = StreamCompaction::CPU::timer().getCpuElapsedTimeForPreviousOperation();
+    printElapsedTime(cpu_compact_wScan, "(std::chrono Measured)");
     printArray(count, c, true);
     printCmpLenResult(count, expectedCount, b, c);
+
 
     zeroArray(SIZE, c);
     printDesc("work-efficient compact, power-of-two");
     count = StreamCompaction::Efficient::compact(SIZE, c, a);
-    printElapsedTime(StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation(), "(CUDA Measured)");
+    float eff_compact = StreamCompaction::Efficient::timer().getGpuElapsedTimeForPreviousOperation();
+    printElapsedTime(eff_compact, "(CUDA Measured)");
     printArray(count, c, true);
     printCmpLenResult(count, expectedCount, b, c);
 
@@ -324,6 +278,8 @@ int main(int argc, char* argv[]) {
     printArray(count, c, true);
     printCmpLenResult(count, expectedNPOT, b, c);
 
+    const std::string compactLogFile = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\compact_size_results.csv";
+    logTestCaseRuntimeToCSV(compactLogFile, SIZE, cpu_compact, cpu_compact_wScan, eff_compact, 0);
 
     printf("\n");
     printf("***********************\n");
@@ -470,11 +426,37 @@ int main(int argc, char* argv[]) {
         delete[] expected;
     }
 
-    benchmarkScans();
-
-
-    system("pause"); // stop Win32 console from closing on exit
     delete[] a;
     delete[] b;
     delete[] c;
+
+}
+
+
+
+int main(int argc, char* argv[]) {
+    const std::string scanLogFile = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\scan_size_results.csv";
+    std::ofstream fout(scanLogFile);
+    fout << "N,CPU(ms),Naive(ms),Efficient(ms),Thrust(ms)" << std::endl;
+    fout.close();
+
+
+
+    const std::string compactLogFile = "C:\\Users\\thero\\OneDrive\\Documents\\GitHub\\Project2-Stream-Compaction\\visualization\\compact_size_results.csv";
+    std::ofstream fout_2(compactLogFile);
+    fout_2 << "N,CPU_NoScan(ms),CPU_WithScan(ms),GPU_Efficient(ms),placeholder" << std::endl;
+    fout_2.close();
+
+
+    for (int i = 0; i < 23; i++) {
+        const int SIZE = 1 << (5 + i); 
+        int* a = new int[SIZE];
+        int* b = new int[SIZE];
+        int* c = new int[SIZE];
+
+        runTests(a, b, c, SIZE);
+    }
+
+    system("pause"); // stop Win32 console from closing on exit
+
 }

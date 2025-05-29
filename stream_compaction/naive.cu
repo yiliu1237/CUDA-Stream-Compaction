@@ -45,11 +45,11 @@ namespace StreamCompaction {
             timer().startGpuTimer();
             for (int d = 1; d <= depth; d++) {
                 naiveScanStep << <numBlocks, blockSize >> > (n, d, dev_ping, dev_pong);
-                //cudaDeviceSynchronize();
 
                 // Swap buffers
                 std::swap(dev_ping, dev_pong);
             }
+            cudaDeviceSynchronize();
             timer().endGpuTimer();
 
             // dev_ping now has the inclusive scan result

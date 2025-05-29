@@ -61,8 +61,52 @@ The primary goals of this project were:
 - Results written to CSV files for analysis.
 
 
-## Test Output Summary
+## Test Cases Summary
 
+This project includes a comprehensive suite of test cases across **scan**, **stream compaction**, and **radix sort**, covering both correctness and performance. Each test is designed to validate behavior on different input types, sizes (including power-of-two and non-power-of-two), and algorithm variants.
+
+### Scan Tests
+Tested scan variants include CPU, naive GPU, work-efficient GPU, Thrust, and shared memory scans.
+
+| Test Description                               | Input Size         | Notes                                                |
+|------------------------------------------------|--------------------|------------------------------------------------------|
+| CPU scan                                       | 2¹⁹ = 524,288      | Baseline for correctness and performance             |
+| Naive GPU scan (power-of-two / non-power-of-two) | 2¹⁹ and 393,931  | Launches multiple kernels per level                 |
+| Work-efficient GPU scan (power-of-two / NPOT)  | 2¹⁹ and 393,931    | Implements upsweep/downsweep                        |
+| Thrust GPU scan (power-of-two / NPOT)          | 2¹⁹ and 393,931    | Uses `thrust::exclusive_scan`                       |
+| Shared memory naive scan                       | 512, 500, 32       | Small sizes for validating shared mem behavior      |
+| Shared memory efficient scan                   | 512, 32            | Efficient scan in shared memory with loop unrolling |
+
+---
+
+### Stream Compaction Tests
+Tested both CPU and GPU compaction with and without scan, for both power-of-two and non-power-of-two sizes.
+
+| Test Description                               | Input Size         | Notes                                                |
+|------------------------------------------------|--------------------|------------------------------------------------------|
+| CPU compaction without scan (POT / NPOT)       | 524,288 / 393,931  | Sequential traversal                                 |
+| CPU compaction with scan                       | 524,288            | Uses scan + scatter                                  |
+| Work-efficient GPU compaction (POT / NPOT)     | 524,288 / 393,931  | Uses map-to-boolean + scan + scatter                |
+
+---
+
+### Radix Sort Tests
+Includes correctness tests for various distributions and sizes, with special cases and large arrays.
+
+| Test Case Description                          | Input Size         | Notes                                                |
+|------------------------------------------------|--------------------|------------------------------------------------------|
+| Random values                                  | 10                 | Basic unsorted small input                          |
+| Already sorted                                 | 8                  | Best-case scenario                                  |
+| Reverse sorted                                 | 8                  | Worst-case scenario                                 |
+| Identical values                               | 6                  | Edge case: no change after sort                     |
+| Contains duplicates                            | 9                  | Tests stable ordering                               |
+| Large array (power-of-two)                     | 65,536             | Stress test for GPU sort                            |
+| Large array (non-power-of-two)                 | 65,519             | Non-POT performance and correctness                 |
+| Nearly sorted array with random swaps          | 16,384             | Realistic scenario with small local disorder        |
+
+
+
+## Test Output Summary
 Below are the results from running the full test suite, including scan, stream compaction, and radix sort performance and correctness checks.
 
 <details>
@@ -168,3 +212,75 @@ Below are the results from running the full test suite, including scan, stream c
     passed
 ```
 </details> 
+
+
+## Scan Runtime Analysis
+
+The figure below shows the elapsed time (in milliseconds) of four scan implementations measured across input sizes ranging from \(2^{13}\) to \(2^{27}\), using a fixed block size of 256. All tests were run in **Release mode** to ensure optimized performance, particularly for the Thrust-based implementation.
+
+![Scan Elapsed Time Plot](visualization/scan_size_plot_13_27.png.png)
+
+### Key Observations
+
+#### Performance at Small Sizes (\(2^{13} \to 2^{17}\))
+- **Thrust Scan** performs exceptionally well, benefiting from Release-mode optimizations that eliminate overhead seen in debug builds.
+- **Efficient GPU Scan** is also strong in this range, clearly outperforming the naive version.
+- **CPU Scan** starts very fast but scales poorly beyond this point.
+
+#### Mid-Range Sizes (\(2^{18} \to 2^{24}\))
+- **Thrust Scan** continues to lead, maintaining low latency while other methods begin to scale more steeply.
+- **Naive GPU Scan** begins to show inefficiencies due to redundant memory access and higher algorithmic complexity.
+- **Efficient GPU Scan** remains competitive but starts to lag behind Thrust.
+
+#### Large Sizes (\(2^{25} \to 2^{27}\))
+- **Thrust Scan** remains the fastest and scales efficiently, highlighting its well-optimized internal operations.
+- **Naive GPU Scan** slows down significantly due to its \(O(n \log n)\) complexity and less efficient memory use.
+- **CPU Scan** becomes the slowest by far, with consistent linear growth.
+
+Overall, Thrust offers the best performance across all input sizes when compiled in Release mode, while the Efficient GPU Scan provides a solid custom alternative with strong performance at small to mid-range sizes. The CPU scan, although fast for small inputs, follows a linear \(O(n)\) time complexity and becomes the slowest as input sizes grow.
+
+
+## Compact Runtime Analysis
+
+The plot below shows the runtime performance (in milliseconds) of three different stream compaction implementations as a function of input size \(N\), ranging from \(2^5\) to \(2^{27}\). All tests were conducted using a fixed CUDA block size of 256 and compiled in **Release mode** to ensure optimal performance.
+
+![Compact Elapsed Time Plot](visualization/compact_size_plot.png)
+
+### Key Observations
+
+#### CPU vs CPU with Scan
+- For small input sizes (\(N \leq 2^{16}\)), both CPU variants show very similar runtimes, indicating that the scan step contributes little overhead in this range.
+- As \(N\) increases, "CPU with Scan" becomes slightly slower than CPU-only compaction due to the added cost of prefix sum computation.
+- Both exhibit consistent linear growth on the log-log plot, confirming the expected **\(O(n)\)** time complexity for serial execution.
+
+#### Efficient GPU Scan
+- The GPU implementation shows near-constant runtime across small and mid-sized inputs (up to \(2^{21}\)), demonstrating excellent scalability due to parallel execution and efficient memory usage.
+- Beyond \(2^{21}\), the runtime begins to increase gradually. This likely reflects:
+  - The need to process more data in global memory
+  - Increased number of kernel launches
+- Even at \(N = 2^{27}\), GPU runtime remains well under 50 ms — significantly outperforming the CPU implementations, which exceed 100 ms at that scale.
+
+
+## Efficient GPU Scan Runtime Analysis (Global Memory Implementation)
+
+The bar chart below displays the runtime (in milliseconds) of a work-efficient Blelloch-style GPU scan implementation that operates entirely in global memory. No shared memory or warp-level primitives are used. 
+
+![Efficient Scan Bar Plot](visualization/efficient_scan_bar_plot.png)
+
+### Key Observations
+
+- For mid-sized inputs (\(2^6\) to \(2^9\)), the scan shows consistently low runtimes (~0.07 ms), indicating effective thread-level parallelism despite global memory latency.
+- Noticeable spikes occur at sizes \(2^5\), \(2^{10}\), and \(2^{13}\), where runtime increases by 2–3× compared to neighboring sizes. These performance dips likely stem from:
+  - **Uncoalesced memory access** due to thread divergence at these specific sizes
+  - **Extra overhead** from partial warp utilization or thread underpopulation in early/late stages of the scan
+  - **Depth-related kernel launches**: For \(N = 2^{13}\), the number of upsweep and downsweep steps increases, amplifying launch and global memory access costs
+- The runtime drop at \(2^{11}\) suggests that thread/block configuration for that size aligns better with the kernel design, temporarily improving efficiency.
+
+### Best Performance
+
+The most optimal performance is observed between \(2^6\) and \(2^9\), where the runtime stabilizes around **0.07 ms**. These sizes likely strike a balance where:
+- The number of elements fits well within available thread blocks,
+- Memory access patterns remain more coalesced,
+- And kernel launch overhead is minimal due to shallower recursion depths in the scan tree.
+
+This range can be considered the **sweet spot** for this global memory-based scan implementation, offering the lowest latency and most consistent performance across all tested input sizes. 
