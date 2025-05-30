@@ -3,12 +3,6 @@
 #include "common.h"
 #include "efficient.h"
 
-#include <device_launch_parameters.h>
-#include <thread>
-#include <thrust/device_ptr.h>
-
-constexpr int blockSize = 512;  // Optimized for SIZE = 1 << 26
-
 namespace StreamCompaction {
     namespace Efficient {
         using StreamCompaction::Common::PerformanceTimer;
@@ -18,78 +12,71 @@ namespace StreamCompaction {
             return timer;
         }
 
-        __global__ void kernReduce(int N, int d, int* data)
-        {
-            int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-            if (index >= N) { return; }
 
-            int k = index * (1 << (d + 1));
-
-            data[k + (1 << (d + 1)) - 1] += data[k + (1 << d) - 1];
-        }
-
-        __global__ void kernTraverseBack(int N, int d, int* data)
-        {
-            int index = (blockIdx.x * blockDim.x) + threadIdx.x;
-            if (index >= N) { return; }
-
-            int k = index * (1 << (d + 1));
-
-            int t = data[k + (1 << d) - 1];
-            data[k + (1 << d) - 1] = data[k + (1 << (d + 1)) - 1];
-            data[k + (1 << (d + 1)) - 1] += t;
-        }
-
-        void scan_gpu(int n, int* dev_data)
-        {
-            thrust::device_ptr<int> dev_thrust_data(dev_data);
-
-            // Up-sweep
-            for (int d = 0; d < ilog2ceil(n) - 1; ++d)
-            {
-                dim3 threadsPerBlock(blockSize);
-                dim3 blocksPerGrid(((n >> (d + 1)) + blockSize - 1) / blockSize);
-                kernReduce << <blocksPerGrid, threadsPerBlock >> > ((n >> (d + 1)), d, dev_data);
-                checkCUDAError("kernReduce launch failed!");
+        __global__ void upsweep(int* data, int twod, int twod1, int n) {
+            int index = threadIdx.x + blockIdx.x * blockDim.x;
+            int k = index * twod1;
+            if (k + twod1 - 1 < n) {
+                data[k + twod1 - 1] += data[k + twod - 1];
             }
+        }
 
-            // Down-sweep
-            dev_thrust_data[n - 1] = 0;
 
-            for (int d = ilog2ceil(n) - 1; d >= 0; --d)
-            {
-                int numThreads = n >> (d + 1);
-                if (numThreads << (d + 1) != n) { numThreads = n >> d; }
-                dim3 threadsPerBlock(blockSize);
-                dim3 blocksPerGrid((numThreads + blockSize - 1) / blockSize);
-                kernTraverseBack << <blocksPerGrid, threadsPerBlock >> > (numThreads, d, dev_data);
-                checkCUDAError("kernTraverseBack launch failed!");
+        __global__ void downsweep(int* data, int twod, int twod1, int n) {
+            int index = threadIdx.x + blockIdx.x * blockDim.x;
+            int k = index * twod1;
+            if (k + twod1 - 1 < n) {
+                int t = data[k + twod - 1];
+                data[k + twod - 1] = data[k + twod1 - 1];
+                data[k + twod1 - 1] += t;
             }
         }
 
         /**
          * Performs prefix-sum (aka scan) on idata, storing the result into odata.
          */
-        void scan(int n, int* odata, const int* idata) {
-            int nCeil = 1 << ilog2ceil(n);
-            // Up-sweep
+
+         // Internal version that controls timing
+        void scan_internal(int n, int* odata, const int* idata, bool timing) {
+            if (timing) timer().startGpuTimer();
+
+            int pow2Len = 1 << ilog2ceil(n);
             int* dev_data;
-            cudaMalloc((void**)&dev_data, nCeil * sizeof(int));
-            checkCUDAError("cudaMalloc dev_data failed!");
-
+            cudaMalloc(&dev_data, pow2Len * sizeof(int));
+            cudaMemset(dev_data, 0, pow2Len * sizeof(int));
             cudaMemcpy(dev_data, idata, n * sizeof(int), cudaMemcpyHostToDevice);
-            checkCUDAError("cudaMemcpy idata->dev_data failed!");
 
-            timer().startGpuTimer();
-            scan_gpu(nCeil, dev_data);
-            timer().endGpuTimer();
+            int blockSize = 512;
+            for (int d = 1; d <= ilog2ceil(pow2Len); ++d) {
+                int twod = 1 << (d - 1);
+                int twod1 = 1 << d;
+                int numThreads = pow2Len / twod1;
+                int numBlocks = (numThreads + blockSize - 1) / blockSize;
+                upsweep << <numBlocks, blockSize >> > (dev_data, twod, twod1, pow2Len);
+                cudaDeviceSynchronize();
+            }
+
+            cudaMemset(dev_data + pow2Len - 1, 0, sizeof(int)); // zero for exclusive
+
+            for (int d = ilog2ceil(pow2Len); d >= 1; --d) {
+                int twod = 1 << (d - 1);
+                int twod1 = 1 << d;
+                int numThreads = pow2Len / twod1;
+                int numBlocks = (numThreads + blockSize - 1) / blockSize;
+                downsweep << <numBlocks, blockSize >> > (dev_data, twod, twod1, pow2Len);
+                cudaDeviceSynchronize();
+            }
 
             cudaMemcpy(odata, dev_data, n * sizeof(int), cudaMemcpyDeviceToHost);
-            checkCUDAError("cudaMemcpy dev_data->odata failed!");
-
-            // Clean up
             cudaFree(dev_data);
+
+            if (timing) timer().endGpuTimer();
         }
+
+        void scan(int n, int* odata, const int* idata) {
+            scan_internal(n, odata, idata, true);
+        }
+
 
 
         /**
@@ -102,51 +89,51 @@ namespace StreamCompaction {
          * @returns      The number of elements remaining after compaction.
          */
         int compact(int n, int* odata, const int* idata) {
-            int nCeil = 1 << ilog2ceil(n);
-            size_t sizeOfArrays = nCeil * sizeof(int);
+            int* dev_idata, * dev_bools, * dev_indices, * dev_odata;
 
-            int* dev_bools;
-            cudaMalloc((void**)&dev_bools, sizeOfArrays);
-            checkCUDAError("cudaMalloc dev_bools failed!");
-
-            int* dev_indices;
-            cudaMalloc((void**)&dev_indices, sizeOfArrays);
-            checkCUDAError("cudaMalloc dev_indices failed!");
-
-            thrust::device_ptr<int> dev_thrust_indices(dev_indices);
-            thrust::device_ptr<int> dev_thrust_bools(dev_bools);
-
-            int* dev_idata;
-            cudaMalloc((void**)&dev_idata, sizeOfArrays);
-            checkCUDAError("cudaMalloc dev_idata failed!");
-
-            int* dev_odata;
-            cudaMalloc((void**)&dev_odata, sizeOfArrays);
-            checkCUDAError("cudaMalloc dev_odata failed!");
+            int pow2n = 1 << ilog2ceil(n);
+            cudaMalloc(&dev_idata, pow2n * sizeof(int));
+            cudaMalloc(&dev_bools, pow2n * sizeof(int));
+            cudaMalloc(&dev_indices, pow2n * sizeof(int));
+            cudaMalloc(&dev_odata, pow2n * sizeof(int));
+            cudaMemset(dev_odata, 0, pow2n * sizeof(int));
 
             cudaMemcpy(dev_idata, idata, n * sizeof(int), cudaMemcpyHostToDevice);
-            checkCUDAError("cudaMemcpy idata->dev_idata failed!");
-
-            dim3 threadsPerBlock(blockSize);
-            dim3 blocksPerGrid((n + blockSize - 1) / blockSize);
 
             timer().startGpuTimer();
-            Common::kernMapToBoolean << <blocksPerGrid, threadsPerBlock >> > (nCeil, dev_bools, dev_idata);
-            checkCUDAError("kernMapToBoolean launch failed!");
 
-            cudaMemcpy(dev_indices, dev_bools, sizeOfArrays, cudaMemcpyDeviceToDevice);
-            checkCUDAError("cudaMemcpy dev_bools->dev_indices failed!");
-            scan_gpu(nCeil, dev_indices);
+            int blockSize = 128;
+            int numBlocks = (n + blockSize - 1) / blockSize;
 
-            int numRemaining = dev_thrust_indices[n - 1] + dev_thrust_bools[n - 1];
+            StreamCompaction::Common::kernMapToBoolean<<<numBlocks, blockSize >>>(
+                n, dev_bools, dev_idata);
+            cudaDeviceSynchronize();
 
-            Common::kernScatter << <blocksPerGrid, threadsPerBlock >> > (nCeil, dev_odata, dev_idata, dev_bools, dev_indices);
-            checkCUDAError("kernScatter launch failed!");
+            scan_internal(n, dev_indices, dev_bools, false);
+            cudaDeviceSynchronize();
+
+            StreamCompaction::Common::kernScatter<<<numBlocks, blockSize >>> (
+                n, dev_odata, dev_idata, dev_bools, dev_indices);
+            cudaDeviceSynchronize();
+
             timer().endGpuTimer();
 
-            cudaMemcpy(odata, dev_odata, numRemaining * sizeof(int), cudaMemcpyDeviceToHost);
+            int count;
+            cudaMemcpy(&count, dev_indices + n - 1, sizeof(int), cudaMemcpyDeviceToHost);
 
-            return numRemaining;
+            int lastBool;
+            cudaMemcpy(&lastBool, dev_bools + n - 1, sizeof(int), cudaMemcpyDeviceToHost);
+            count += lastBool;
+
+            cudaMemcpy(odata, dev_odata, count * sizeof(int), cudaMemcpyDeviceToHost);
+
+            cudaFree(dev_idata);
+            cudaFree(dev_bools);
+            cudaFree(dev_indices);
+            cudaFree(dev_odata);
+
+            return count;
         }
+
     }
 }

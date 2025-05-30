@@ -448,14 +448,22 @@ int main(int argc, char* argv[]) {
     fout_2.close();
 
 
-    for (int i = 0; i < 23; i++) {
-        const int SIZE = 1 << (5 + i); 
-        int* a = new int[SIZE];
-        int* b = new int[SIZE];
-        int* c = new int[SIZE];
+    //for (int i = 0; i < 5; i++) {
+    //    const int SIZE = 1 << (5 + i); 
+    //    int* a = new int[SIZE];
+    //    int* b = new int[SIZE];
+    //    int* c = new int[SIZE];
 
-        runTests(a, b, c, SIZE);
-    }
+    //    runTests(a, b, c, SIZE);
+    //}
+
+
+    const int SIZE = 1 << 20;
+    int* a = new int[SIZE];
+    int* b = new int[SIZE];
+    int* c = new int[SIZE];
+
+    runTests(a, b, c, SIZE);
 
     system("pause"); // stop Win32 console from closing on exit
 
