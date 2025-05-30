@@ -226,17 +226,18 @@ The figure below shows the elapsed time (in milliseconds) of four scan implement
 
 #### Performance at Small Sizes (\(2^{13} → 2^{17}\))
 - **Thrust Scan** performs exceptionally well, benefiting from Release-mode optimizations that eliminate overhead seen in debug builds.
-- **Efficient GPU Scan** is also strong in this range, clearly outperforming the naive version.
+- **Naive GPU Scan** outperforms the Efficient GPU Scan in this range. This may be due to:
+  - Fewer kernel launches (one per depth level with simpler memory patterns)
+  - Lower overhead from global memory usage per pass
 - **CPU Scan** starts very fast but scales poorly beyond this point.
 
-#### Mid-Range Sizes (\(2^{18} → 2^{24}\))
+#### Mid-Range Sizes (\(2^{18} → 2^{20}\))
 - **Thrust Scan** continues to lead, maintaining low latency while other methods begin to scale more steeply.
 - **Naive GPU Scan** begins to show inefficiencies due to redundant memory access and higher algorithmic complexity.
-- **Efficient GPU Scan** remains competitive but starts to lag behind Thrust.
 
-#### Large Sizes (\(2^{25} → 2^{27}\))
+#### Large Sizes (\(2^{21} → 2^{27}\))
 - **Thrust Scan** remains the fastest and scales efficiently, highlighting its well-optimized internal operations.
-- **Naive GPU Scan** slows down significantly due to its \(O(n \log n)\) complexity and less efficient memory use.
+- **Naive GPU Scan** slows down due to its \(O(n \log n)\) complexity and less efficient memory use.
 - **CPU Scan** becomes the slowest by far, with consistent linear growth.
 
 Overall, Thrust offers the best performance across all input sizes when compiled in Release mode, while the Efficient GPU Scan provides a solid custom alternative with strong performance at small to mid-range sizes. The CPU scan, although fast for small inputs, follows a linear \(O(n)\) time complexity and becomes the slowest as input sizes grow.
@@ -253,11 +254,10 @@ The plot below shows the runtime performance (in milliseconds) of three differen
 
 #### CPU vs CPU with Scan
 - For small input sizes (\(N ≤ 2^{16}\)), both CPU variants show very similar runtimes, indicating that the scan step contributes little overhead in this range.
-- As \(N\) increases, "CPU with Scan" becomes slightly slower than CPU-only compaction due to the added cost of prefix sum computation.
 - Both exhibit consistent linear growth on the log-log plot, confirming the expected **\(O(n)\)** time complexity for serial execution.
 
 #### Efficient GPU Scan
-- The GPU implementation shows near-constant runtime across small and mid-sized inputs (up to \(2^{21}\)), demonstrating excellent scalability due to parallel execution and efficient memory usage.
+- The GPU implementation shows near-constant runtime across small and mid-sized inputs (up to \(2^{21}\)), demonstrating its scalability due to parallel execution and efficient memory usage.
 - Beyond \(2^{21}\), the runtime begins to increase gradually. This likely reflects:
   - The need to process more data in global memory
   - Increased number of kernel launches
