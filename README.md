@@ -40,7 +40,7 @@ The primary goals of this project were:
 ### 3. **Scan Implementations (for Compaction Support)**
 
 #### • Naive GPU Scan
-- Textbook parallel scan with \( O(n \log n) \) operations.
+- Textbook parallel scan with \( O(n log n) \) operations.
 - New kernel launched at every depth level.
 
 #### • Work-Efficient GPU Scan (Blelloch)
@@ -237,7 +237,7 @@ The figure below shows the elapsed time (in milliseconds) of four scan implement
 
 #### Large Sizes (\(2^{21} → 2^{27}\))
 - **Thrust Scan** remains the fastest and scales efficiently, highlighting its well-optimized internal operations.
-- **Naive GPU Scan** slows down due to its \(O(n \log n)\) complexity and less efficient memory use.
+- **Naive GPU Scan** slows down due to its \(O(n log n)\) complexity and less efficient memory use.
 - **CPU Scan** becomes the slowest by far, with consistent linear growth.
 
 Overall, Thrust offers the best performance across all input sizes when compiled in Release mode, while the Efficient GPU Scan provides a solid custom alternative with strong performance at small to mid-range sizes. The CPU scan, although fast for small inputs, follows a linear \(O(n)\) time complexity and becomes the slowest as input sizes grow.
@@ -253,7 +253,8 @@ The plot below shows the runtime performance (in milliseconds) of three differen
 ### Key Observations
 
 #### CPU vs CPU with Scan
-- For small input sizes (\(N ≤ 2^{16}\)), both CPU variants show very similar runtimes, indicating that the scan step contributes little overhead in this range.
+- For small input sizes (\(N < 2^{17}\)), **CPU with Scan** actually performs slightly better than pure CPU compaction. This may be due to better branch predictability, more regular loop structures, or favorable memory access patterns in the scan version.
+- As input size increases beyond \(2^{17}\), the runtimes of both CPU variants gradually converge, showing similar linear growth.
 - Both exhibit consistent linear growth on the log-log plot, confirming the expected **\(O(n)\)** time complexity for serial execution.
 
 #### Efficient GPU Scan
@@ -291,7 +292,7 @@ The most optimal performance is observed between \(2^7\) and \(2^9\), where the 
 The efficient GPU scan, although theoretically better in terms of work complexity \(O(n)\), is sometimes slower than both the CPU scan and the naive GPU scan. After analyzing my implementation and reviewing how GPUs work, here is my explanation:
 
 ### kernel launch overhead becomes significant
-In my implementation, for each depth level of both upsweep and downsweep, I launch a separate kernel. Since the depth is \(\log_2(n)\), I am launching multiple kernels even for small input sizes.
+In my implementation, for each depth level of both upsweep and downsweep, I launch a separate kernel. Since the depth is \(log_2(n)\), I am launching multiple kernels even for small input sizes.
 On GPUs, kernel launches have some non-negligible overhead, especially when the amount of computation per launch is small. When input size is small, the kernel launch overhead actually dominates the total runtime.
 In contrast, CPU scan uses a simple loop without any such overhead.
 
@@ -315,9 +316,9 @@ On the CPU, memory access is sequential and benefits from caching, which makes i
 
 | Factor | CPU Scan | Naive GPU Scan | Efficient GPU Scan |
 |--------|----------|----------------|---------------------|
-| Complexity | \(O(n)\) | \(O(n \log n)\) | \(O(n)\) |
+| Complexity | \(O(n)\) | \(O(n log n)\) | \(O(n)\) |
 | Memory Pattern | Sequential | Coalesced | Strided (degrades at deeper levels) |
-| Kernel Launches | 1 | \(\log n\) | \(2 \log n\) |
+| Kernel Launches | 1 | \(log n\) | \(2 log n\) |
 | Warp Utilization | N/A | High | Drops significantly at deeper levels |
 | Global Memory Traffic | Low | Moderate | High |
 
