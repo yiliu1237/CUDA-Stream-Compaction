@@ -283,3 +283,58 @@ The bar chart below displays the runtime (in milliseconds) of a work-efficient B
 ### Best Performance
 
 The most optimal performance is observed between \(2^7\) and \(2^9\), where the runtime stabilizes around **0.07 ms**. This range can be considered the **sweet spot** for this global memory-based scan implementation, offering the lowest latency and most consistent performance across all tested input sizes. 
+
+---
+
+## Part 5: Why Is My Efficient GPU Scan Sometimes Slower Than CPU and Even Slower Than Naive?
+
+The efficient GPU scan, although theoretically better in terms of work complexity \(O(n)\), is sometimes slower than both the CPU scan and the naive GPU scan. After analyzing my implementation and reviewing how GPUs work, here is my explanation:
+
+### kernel launch overhead becomes significant
+In my implementation, for each depth level of both upsweep and downsweep, I launch a separate kernel. Since the depth is \(\log_2(n)\), I am launching multiple kernels even for small input sizes.
+On GPUs, kernel launches have some non-negligible overhead, especially when the amount of computation per launch is small. When input size is small, the kernel launch overhead actually dominates the total runtime.
+In contrast, CPU scan uses a simple loop without any such overhead.
+
+### thread utilization becomes poor at deeper levels
+At each level \(d\), the number of active threads launched is reduced:
+- At the first level, many threads are working.
+- As \(d\) increases, fewer and fewer threads are needed.
+- For very deep levels, I might be launching blocks where only a few threads are doing useful work while many others are idle.
+
+This results in low occupancy and poor utilization of GPU resources. Even though many threads exist, most of them are effectively "lazy" and just sitting idle at deeper levels.
+
+### global memory access pattern is inefficient
+In each kernel, threads read and write data directly to global memory:
+- The access pattern involves strided addresses like `data[k + (1 << d) - 1]` and `data[k + (1 << (d + 1)) - 1]`.
+- As \(d\) increases, these strides get larger, and global memory accesses become more scattered and less coalesced.
+- Uncoalesced memory access wastes memory bandwidth and increases latency.
+
+On the CPU, memory access is sequential and benefits from caching, which makes its memory much more efficient.
+
+## Summary Table
+
+| Factor | CPU Scan | Naive GPU Scan | Efficient GPU Scan |
+|--------|----------|----------------|---------------------|
+| Complexity | \(O(n)\) | \(O(n \log n)\) | \(O(n)\) |
+| Memory Pattern | Sequential | Coalesced | Strided (degrades at deeper levels) |
+| Kernel Launches | 1 | \(\log n\) | \(2 \log n\) |
+| Warp Utilization | N/A | High | Drops significantly at deeper levels |
+| Global Memory Traffic | Low | Moderate | High |
+
+---
+
+## Extra Credit Summary
+
+For the extra credit, I implemented several additional features and optimizations beyond the baseline requirements:
+
+1. **Shared Memory Optimized Naive Scan (`sharednaivemem.cu/h`)**  
+   - Added shared memory support to the naive scan to reduce global memory traffic and improve performance on small input sizes.
+
+2. **Shared Memory Optimized Work-Efficient Scan (`sharedefficientmem.cu/h`)**  
+   - Applied shared memory to the work-efficient scan, optimizing intra-block upsweep and downsweep phases to minimize global memory accesses.
+
+3. **Radix Sort Implementation (`radix.cu/h`)**  
+   - Implemented Least Significant Bit (LSB) Radix Sort using scan as a building block to perform bitwise sorting across 32 passes.
+
+4. **Extra Credit Question: Why Efficient Scan Can Be Slower**  
+   - Provided a explanation on why the efficient scan may perform worse than naive scan or CPU scan for certain input sizes, due to factors such as kernel launch overhead, low thread occupancy at deeper levels, and non-coalesced memory accesses.
