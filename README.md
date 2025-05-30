@@ -253,7 +253,7 @@ The plot below shows the runtime performance (in milliseconds) of three differen
 ### Key Observations
 
 #### CPU vs CPU with Scan
-- For small input sizes (\(N < 2^{17}\)), **CPU with Scan** actually performs slightly better than pure CPU compaction. This may be due to better branch predictability, more regular loop structures, or favorable memory access patterns in the scan version.
+- For small input sizes (\(N < 2^{17}\)), **CPU with Scan** actually performs slightly better than pure CPU compaction.
 - As input size increases beyond \(2^{17}\), the runtimes of both CPU variants gradually converge, showing similar linear growth.
 - Both exhibit consistent linear growth on the log-log plot, confirming the expected **\(O(n)\)** time complexity for serial execution.
 
