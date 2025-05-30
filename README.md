@@ -273,8 +273,8 @@ The bar chart below displays the runtime (in milliseconds) of a work-efficient B
 
 ### Key Observations
 
-- For mid-sized inputs (\(2^6\) to \(2^9\)), the scan shows consistently low runtimes (~0.07 ms), indicating effective thread-level parallelism despite global memory latency.
-- Noticeable spikes occur at sizes \(2^5\), \(2^{10}\), and \(2^{13}\), where runtime increases by 2–3× compared to neighboring sizes. These performance dips likely stem from:
+- For mid-sized inputs (\(2^7\) to \(2^9\)), the scan shows consistently low runtimes (~0.07 ms), indicating effective thread-level parallelism despite global memory latency.
+- Noticeable spikes occur at sizes \(2^6\), \(2^{10}\), and \(2^{12}\), where runtime increases by 2–3× compared to neighboring sizes. These performance dips likely stem from:
   - **Uncoalesced memory access** due to thread divergence at these specific sizes
   - **Extra overhead** from partial warp utilization or thread underpopulation in early/late stages of the scan
   - **Depth-related kernel launches**: For \(N = 2^{13}\), the number of upsweep and downsweep steps increases, amplifying launch and global memory access costs
@@ -282,9 +282,4 @@ The bar chart below displays the runtime (in milliseconds) of a work-efficient B
 
 ### Best Performance
 
-The most optimal performance is observed between \(2^6\) and \(2^9\), where the runtime stabilizes around **0.07 ms**. These sizes likely strike a balance where:
-- The number of elements fits well within available thread blocks,
-- Memory access patterns remain more coalesced,
-- And kernel launch overhead is minimal due to shallower recursion depths in the scan tree.
-
-This range can be considered the **sweet spot** for this global memory-based scan implementation, offering the lowest latency and most consistent performance across all tested input sizes. 
+The most optimal performance is observed between \(2^7\) and \(2^9\), where the runtime stabilizes around **0.07 ms**. This range can be considered the **sweet spot** for this global memory-based scan implementation, offering the lowest latency and most consistent performance across all tested input sizes. 
