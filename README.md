@@ -287,7 +287,7 @@ The most optimal performance is observed between \(2^7\) and \(2^9\), where the 
 
 ---
 
-## Part 5: Why Is My Efficient GPU Scan Sometimes Slower Than CPU and Even Slower Than Naive?
+## Why Is The Efficient GPU Scan Sometimes Slower Than CPU and Even Slower Than Naive?
 
 The efficient GPU scan, although theoretically better in terms of work complexity \(O(n)\), is sometimes slower than both the CPU scan and the naive GPU scan. After analyzing my implementation and reviewing how GPUs work, here is my explanation:
 
